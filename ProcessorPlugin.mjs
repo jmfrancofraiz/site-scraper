@@ -116,55 +116,56 @@ export default class ProcessorPlugin {
     fs.writeFileSync(htmlFilePath, $.html(), 'utf-8');
   }
 
+    /**
+   * Transforms the names of the resources to download them to the required path
+   * and updates the html accordingly.
+   * @param {*} resource 
+   * @param {*} responseData 
+   * @returns the new file name of the resource to be downloaded
+   */
+  renameResources(resource, responseData) {
+    const url = Url.parse(normalize(resource.getUrl(), { removeTrailingSlash: false, stripHash: true }));
+    let filePath = decodeURIComponent(url.pathname);
+    //filePath = filePath.substring(1); // remove trailing '/'
+    if (filePath == '/') {
+      filePath = 'index.html';
+    }
+
+    // http://example.com/image.png?q=123 --> http://example.com/image_aef12dc0.png
+    if (url.query || url.hash) {
+      const parsed = path.parse(filePath);
+      const basename = path.join(parsed.dir, parsed.name);
+      const ext = parsed.ext || '';
+      const hashedParams = this.hashParams(url);
+      filePath = `${basename}_${hashedParams}${ext}`;
+    }
+
+    // http://example.com/whatever --> http://example.com/whatever/index.html
+    if (resource.isHtml()) {
+      const endsWithHtmlOrHtm = /(\.html|\.htm)$/i;
+      if (!endsWithHtmlOrHtm.test(filePath)) {
+        filePath = `${filePath}.html`;
+      }
+    }
+
+    if (filePath.endsWith(".ashx")) {
+      const parsed = path.parse(filePath);
+      const mimeType = responseData.mimeType;
+      const ext = mime.getExtension(mimeType);
+      const basename = path.join(parsed.dir, parsed.name);
+      filePath = `${basename}.${ext}`;
+    }
+
+    console.log(`${resource.getUrl()} --> ${filePath}`);
+    return {
+      filename: filePath
+    };
+  }
+
   apply(registerAction) {
 
-    /**
-     * Transforms resources' names to download them to the required 
-     * path and updates the html accordingly.
-     * Returns the new file name of the resource to be downloaded
-     */
     registerAction('generateFilename', ({resource, responseData}) => {
-
-      const url = Url.parse(normalize(resource.getUrl(),{removeTrailingSlash: false, stripHash: true}));
-      let filePath = decodeURIComponent(url.pathname)
-      //filePath = filePath.substring(1); // remove trailing '/'
-
-      if (filePath == '/') {
-        filePath = 'index.html';
-      }
-
-      // http://example.com/image.png?q=123 --> http://example.com/image_aef12dc0.png
-      if (url.query || url.hash) {
-        const parsed = path.parse(filePath);
-        const basename = path.join(parsed.dir, parsed.name);
-        const ext = parsed.ext || '';
-        const hashedParams = this.hashParams(url);
-        filePath = `${basename}_${hashedParams}${ext}`;
-      }
-
-      // http://example.com/whatever --> http://example.com/whatever/index.html
-      if (resource.isHtml()) {
-        const endsWithHtmlOrHtm = /(\.html|\.htm)$/i;
-        if (!endsWithHtmlOrHtm.test(filePath)) {
-          filePath = `${filePath}.html`;
-        }
-      }
-
-      if (filePath.endsWith(".ashx")) {
-        const parsed = path.parse(filePath);
-        const mimeType = responseData.mimeType;
-        let ext = mimeType.split('/').pop();
-        ext = ext.split('+')[0]; // removes "+xml" from svg+xml
-        if (ext === 'x-javascript') ext = 'js';
-        const basename = path.join(parsed.dir, parsed.name);
-        filePath = `${basename}.${ext}`;
-      }
-
-      console.log(`${resource.getUrl()} --> ${filePath}`);
-      return {
-        filename: filePath
-      }
-
+      return this.renameResources(resource, responseData);
     });
 
     registerAction('afterResponse', async ({response}) => {
@@ -178,7 +179,6 @@ export default class ProcessorPlugin {
       }
     });
     
-
     registerAction('onResourceSaved', ({resource}) => {
       // post process
       if (resource.getFilename().endsWith('.html')) {
@@ -187,5 +187,6 @@ export default class ProcessorPlugin {
     });
 
   }
+
 
 }
