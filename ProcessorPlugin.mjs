@@ -134,7 +134,7 @@ export default class ProcessorPlugin {
               const files = $ngApp.match(/(?<=)(\/[-\w\/\.]+\.ashx)(?=)/g);
               for (const file of files) {
                 console.log(`Processing ${file} in ng-app`);
-                // TO DO: avoid downloding same file twice
+                // TO DO: skip already downloaded files
                 const response = await got(this.baseUrl + file, { responseType: 'buffer' });
                 const mimeType = response.headers['content-type'];
                 const ext = mime.getExtension(mimeType);
