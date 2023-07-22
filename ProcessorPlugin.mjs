@@ -14,53 +14,109 @@ export default class ProcessorPlugin {
     this.baseUrl = url;
   }
 
-  apply(registerAction) {
-
-    function hashParams(url) {
-      const str = (url.query || '') + (url.hash || '');
-      if (str === '') return '';
-      let hash = 0;
-      for (let i = 0; i < str.length; i++) {
-         const charCode = str.charCodeAt(i);
-         hash = ((hash << 5) - hash) + charCode;
-         hash |= 0; // Convert to 32-bit integer
-      }
-      const hashCode = Math.abs(hash).toString(16).substring(0, 8);
-      return hashCode;
+  /**
+   * Hashes the url parameters
+   * @param {string} url 
+   * @returns the hash
+   */
+  hashParams(url) {
+    const str = (url.query || '') + (url.hash || '');
+    if (str === '') return '';
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+       const charCode = str.charCodeAt(i);
+       hash = ((hash << 5) - hash) + charCode;
+       hash |= 0; // Convert to 32-bit integer
     }
+    const hashCode = Math.abs(hash).toString(16).substring(0, 8);
+    return hashCode;
+  }
 
- 
-    /**
-     * 1. Removes trailing .html from internal links.
-     * 2. Transforms "index.html" into "/"
-     * @param {*} htmlFilePath 
-     * @param {*} baseUrl 
-     */
-    function processInternalLinks(htmlFilePath,baseUrl) {
-      console.log(`${htmlFilePath} > Removing html extension on internal links`);
-      const htmlContent = fs.readFileSync(htmlFilePath, 'utf-8');
-      const $ = cheerio.load(htmlContent);
-      const selectors = [
-        'a:not([href^="http"], [href^="//"])',
-        `a[href^=${baseUrl}]`,
-      ]
-      $(selectors.join(',')).each((index, element) => {
-          const $element = $(element);
-          const oldValue = $element.attr('href');
-          if (oldValue) {
-            let newValue = oldValue;
-            if (oldValue == 'index.html') {
-              newValue = '/';
-            } else if (oldValue.endsWith('.html')) {
-              newValue = oldValue.replace(/\.html$/i, '');
-            }
-            if (oldValue != newValue) {
-              $element.attr('href', newValue);
-            }
+  /**
+   * Proceses the response (html) looking for angular apps to
+   * download ashx and replace their references
+   * @param {*} response 
+   */
+  async processNgApp(response) {
+    const $ = cheerio.load(response.body.toString());
+    console.log(`Looking for ng-apps in ${response.requestUrl}`);
+
+    await Promise.all(
+      $('div[data-ng-init*="ashx"],div[ng-init*="ashx"]').map(async (index, element) => {
+
+        let attr = 'data-ng-init';
+        let $ngApp = $(element).attr(attr);
+        if (!$ngApp) {
+          attr = 'ng-init';
+          $ngApp = $(element).attr(attr);
+        }
+
+        // extract the ashx files
+        let files = $ngApp.match(/(?<=)(\/[-\w\/\.]+\.ashx)(?=)/g);
+        if (files.length > 0) {
+
+          //remove dups
+          files = [...new Set(files)];
+
+          await Promise.all(
+            files.map(async (file) => {
+              console.log(`Downloading ${file} for ng-app`);
+              const response = await got(this.baseUrl + file, { responseType: 'buffer' });
+              const mimeType = response.headers['content-type'];
+              const ext = mime.getExtension(mimeType);
+              const parsed = path.parse(file);
+              const dir = path.join('out', parsed.dir);
+              const name = `${parsed.name}.${ext}`;
+              const newUrl = path.join(parsed.dir, name);
+              const filePath = path.join(dir, name);
+              fs.mkdirSync(dir, { recursive: true });
+              fs.writeFileSync(filePath, response.body);
+              $ngApp = $ngApp.replaceAll(file, newUrl);
+            })
+          );
+
+          $(element).attr(attr, $ngApp);
+          response.body = Buffer.from($.html());
+
+        }
+
+      })
+    );
+  }
+
+  /**
+   * 1. Removes trailing .html from internal links.
+   * 2. Transforms "index.html" into "/"
+   * @param {*} htmlFilePath 
+   * @param {*} baseUrl 
+   */
+  processInternalLinks(htmlFilePath,baseUrl) {
+    console.log(`${htmlFilePath} > Removing html extension on internal links`);
+    const htmlContent = fs.readFileSync(htmlFilePath, 'utf-8');
+    const $ = cheerio.load(htmlContent);
+    const selectors = [
+      'a:not([href^="http"], [href^="//"])',
+      `a[href^=${baseUrl}]`,
+    ]
+    $(selectors.join(',')).each((index, element) => {
+        const $element = $(element);
+        const oldValue = $element.attr('href');
+        if (oldValue) {
+          let newValue = oldValue;
+          if (oldValue == 'index.html') {
+            newValue = '/';
+          } else if (oldValue.endsWith('.html')) {
+            newValue = oldValue.replace(/\.html$/i, '');
           }
-      });
-      fs.writeFileSync(htmlFilePath, $.html(), 'utf-8');
-    }
+          if (oldValue != newValue) {
+            $element.attr('href', newValue);
+          }
+        }
+    });
+    fs.writeFileSync(htmlFilePath, $.html(), 'utf-8');
+  }
+
+  apply(registerAction) {
 
     /**
      * Transforms resources' names to download them to the required 
@@ -82,7 +138,7 @@ export default class ProcessorPlugin {
         const parsed = path.parse(filePath);
         const basename = path.join(parsed.dir, parsed.name);
         const ext = parsed.ext || '';
-        const hashedParams = hashParams(url);
+        const hashedParams = this.hashParams(url);
         filePath = `${basename}_${hashedParams}${ext}`;
       }
 
@@ -115,50 +171,9 @@ export default class ProcessorPlugin {
       if (response.statusCode === 404) {
         return null;
       } else {
-
         if (response.headers['content-type'].startsWith('text/html')) {
-
-          const $ = cheerio.load(response.body.toString());
-          console.log(`Looking for ng-apps in ${response.requestUrl}`);
-
-          const promises = [];
-          $('div[data-ng-init*="ashx"],div[ng-init*="ashx"]').each((index, element) => {
-            promises.push(new Promise(async (resolve,reject) => {
-              let attr = 'data-ng-init';
-              let $ngApp = $(element).attr(attr);
-              if (!$ngApp) {
-                attr = 'ng-init';
-                $ngApp = $(element).attr(attr);
-              }
-              // extract the ashx files
-              const files = $ngApp.match(/(?<=)(\/[-\w\/\.]+\.ashx)(?=)/g);
-              for (const file of files) {
-                console.log(`Processing ${file} in ng-app`);
-                // TO DO: skip already downloaded files
-                const response = await got(this.baseUrl + file, { responseType: 'buffer' });
-                const mimeType = response.headers['content-type'];
-                const ext = mime.getExtension(mimeType);
-                const parsed = path.parse(file);
-                const dir = path.join('out',parsed.dir);
-                const name = `${parsed.name}.${ext}`;
-                const newUrl = path.join(parsed.dir,name);
-                const filePath = path.join(dir,name);
-                fs.mkdirSync(dir,{recursive:true});
-                fs.writeFileSync(filePath,response.body);
-                $ngApp = $ngApp.replaceAll(file,newUrl);
-              }
-              $(element).attr(attr,$ngApp);
-              resolve($.html());
-            }));
-          });
-
-          if (promises.length > 0) {
-            const html = (await Promise.all(promises)).pop();
-            response.body = Buffer.from(html);
-          }
-
+          await this.processNgApp(response);
         }
-
         return response;
       }
     });
@@ -167,9 +182,10 @@ export default class ProcessorPlugin {
     registerAction('onResourceSaved', ({resource}) => {
       // post process
       if (resource.getFilename().endsWith('.html')) {
-        processInternalLinks('./out/' + resource.getFilename(), this.baseUrl);
+        this.processInternalLinks('./out/' + resource.getFilename(), this.baseUrl);
       }
     });
 
   }
+
 }
