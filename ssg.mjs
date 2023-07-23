@@ -2,13 +2,14 @@ import scrape from 'website-scraper';
 import ProcessorPlugin from './ProcessorPlugin.mjs';
 
 const baseUrl = process.argv[2] || 'https://www.coolsculpting.dk/';
+const resultPath = './out';
 
 const options = {
   urls: [baseUrl],
   urlFilter: (url) => url.startsWith(baseUrl),
   recursive: true,
-  directory: './out',
-  plugins: [ new ProcessorPlugin(baseUrl) ],
+  directory: resultPath,
+  plugins: [ new ProcessorPlugin(baseUrl,resultPath) ],
   sources: [
 
     // defaults

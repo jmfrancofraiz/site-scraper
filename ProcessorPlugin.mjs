@@ -9,15 +9,17 @@ import mime from 'mime';
 export default class ProcessorPlugin {
 
   baseUrl;
+  outDir;
 
-  constructor(url) {
-    this.baseUrl = url;
+  constructor(baseUrl, outDir) {
+    this.baseUrl = baseUrl;
+    this.outDir = outDir;
   }
 
   /**
    * Hashes the url parameters
    * @param {string} url 
-   * @returns the hash
+   * @returns {string} the hash, 8 chars long
    */
   hashParams(url) {
     const str = (url.query || '') + (url.hash || '');
@@ -35,7 +37,7 @@ export default class ProcessorPlugin {
   /**
    * Proceses the response (html) looking for angular apps to
    * download ashx and replace their references
-   * @param {*} response 
+   * @param {response} response as https://github.com/sindresorhus/got/blob/main/source/core/response.ts
    */
   async processNgApp(response) {
     const $ = cheerio.load(response.body.toString());
@@ -65,7 +67,7 @@ export default class ProcessorPlugin {
               const mimeType = response.headers['content-type'];
               const ext = mime.getExtension(mimeType);
               const parsed = path.parse(file);
-              const dir = path.join('out', parsed.dir);
+              const dir = path.join(this.outDir, parsed.dir);
               const name = `${parsed.name}.${ext}`;
               const newUrl = path.join(parsed.dir, name);
               const filePath = path.join(dir, name);
@@ -85,10 +87,11 @@ export default class ProcessorPlugin {
   }
 
   /**
-   * 1. Removes trailing .html from internal links.
-   * 2. Transforms "index.html" into "/"
-   * @param {*} htmlFilePath 
-   * @param {*} baseUrl 
+   * Processes a file in the file system in order to:
+   * 1. Transform "index.html" into "/"
+   * 2. Remove trailing .html from internal links
+   * @param {string} htmlFilePath 
+   * @param {string} baseUrl 
    */
   processInternalLinks(htmlFilePath,baseUrl) {
     console.log(`${htmlFilePath} > Removing html extension on internal links`);
@@ -119,36 +122,37 @@ export default class ProcessorPlugin {
     /**
    * Transforms the names of the resources to download them to the required path
    * and updates the html accordingly.
-   * @param {*} resource 
+   * @param {Resource} resource (https://github.com/website-scraper/node-website-scraper/blob/master/lib/resource.js)
    * @param {*} responseData 
    * @returns the new file name of the resource to be downloaded
    */
   renameResources(resource, responseData) {
     const url = Url.parse(normalize(resource.getUrl(), { removeTrailingSlash: false, stripHash: true }));
     let filePath = decodeURIComponent(url.pathname);
-    //filePath = filePath.substring(1); // remove trailing '/'
+
     if (filePath == '/') {
       filePath = 'index.html';
     }
 
-    // http://example.com/image.png?q=123 --> http://example.com/image_aef12dc0.png
+    // http://example.com/image.ashx?q=123 --> http://example.com/image_aef12dc0.ashx
     if (url.query || url.hash) {
       const parsed = path.parse(filePath);
       const basename = path.join(parsed.dir, parsed.name);
-      const ext = parsed.ext || '';
+      const ext = parsed.ext || ''; // starts with '.'
       const hashedParams = this.hashParams(url);
       filePath = `${basename}_${hashedParams}${ext}`;
     }
 
     // http://example.com/whatever --> http://example.com/whatever/index.html
-    if (resource.isHtml()) {
-      const endsWithHtmlOrHtm = /(\.html|\.htm)$/i;
+    if (resource.isHtml() && !filePath.endsWith('.ashx')) {
+      const endsWithHtmlOrHtm = /\.html?$/i;
       if (!endsWithHtmlOrHtm.test(filePath)) {
         filePath = `${filePath}.html`;
       }
     }
 
-    if (filePath.endsWith(".ashx")) {
+    // http://example.com/image_with_png_mimetype.ashx --> http://example.com/image_with_png_mimetype.png
+    if (filePath.endsWith('.ashx')) {
       const parsed = path.parse(filePath);
       const mimeType = responseData.mimeType;
       const ext = mime.getExtension(mimeType);
@@ -182,8 +186,13 @@ export default class ProcessorPlugin {
     registerAction('onResourceSaved', ({resource}) => {
       // post process
       if (resource.getFilename().endsWith('.html')) {
-        this.processInternalLinks('./out/' + resource.getFilename(), this.baseUrl);
+        const fsFile = path.join(this.outDir, resource.getFilename());
+        this.processInternalLinks(fsFile, this.baseUrl);
       }
+    });
+
+    registerAction('error', async ({error}) => {
+      console.error(error);
     });
 
   }
