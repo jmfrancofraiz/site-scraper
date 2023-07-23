@@ -18,7 +18,7 @@ $ npm install
 # Run
 
 ```
-$ npm run ssg https://mx.coolsculpting.com/
+$ npm run ssg https://www.coolsculpting.dk/
 ```
 
 The result is going to be placed in a folder called `out`. The script will fail is that folder already exits, to avoid overwriting previous executions.
