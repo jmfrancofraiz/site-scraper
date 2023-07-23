@@ -1,7 +1,7 @@
 import scrape from 'website-scraper';
 import ProcessorPlugin from './ProcessorPlugin.mjs';
 
-const baseUrl = process.argv[2] || 'https://www.coolsculpting.dk/';
+const baseUrl = process.argv[2]; // 'https://www.coolsculpting.dk/'
 const resultPath = './out';
 
 const options = {
@@ -56,5 +56,8 @@ const options = {
   ],
 };
 
-// with async/await
 const result = await scrape(options);
+
+// TO DO
+// Pull down sitemap.xml and robots.txt to the ./out dir
+// Some other steps mentioned in https://allerganbt.atlassian.net/wiki/spaces/AAAEM/pages/2445279242/Tips+Tricks+Gotchas+for+SSG+sites could be done in ProcessorPlugin afterResponse or onResourceSaved call backs

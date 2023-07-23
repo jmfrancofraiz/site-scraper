@@ -93,7 +93,7 @@ export default class ProcessorPlugin {
    * @param {string} htmlFilePath 
    * @param {string} baseUrl 
    */
-  processInternalLinks(htmlFilePath,baseUrl) {
+  prettifyInternalLinks(htmlFilePath,baseUrl) {
     console.log(`${htmlFilePath} > Removing html extension on internal links`);
     const htmlContent = fs.readFileSync(htmlFilePath, 'utf-8');
     const $ = cheerio.load(htmlContent);
@@ -187,7 +187,7 @@ export default class ProcessorPlugin {
       // post process
       if (resource.getFilename().endsWith('.html')) {
         const fsFile = path.join(this.outDir, resource.getFilename());
-        this.processInternalLinks(fsFile, this.baseUrl);
+        this.prettifyInternalLinks(fsFile, this.baseUrl);
       }
     });
 
