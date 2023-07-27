@@ -7,7 +7,7 @@ const resultPath = './out';
 
 const options = {
   urls: [pulldownUrl],
-  urlFilter: (url) => url.startsWith(parsedUrl.origin),
+  urlFilter: (url) => new URL(url).origin == parsedUrl.origin,
   recursive: true,
   directory: resultPath,
   plugins: [ new ProcessorPlugin(parsedUrl.href,resultPath) ],
