@@ -1,5 +1,5 @@
 import scrape from 'website-scraper';
-import ProcessorPlugin from './ProcessorPlugin.mjs';
+import ProcessorPlugin from './SitecorePlugin.mjs';
 
 const pulldownUrl = process.argv[2]; // 'https://www.coolsculpting.dk/'
 const parsedUrl = new URL(pulldownUrl);
